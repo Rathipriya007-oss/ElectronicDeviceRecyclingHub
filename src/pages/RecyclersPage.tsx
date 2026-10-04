@@ -15,7 +15,7 @@ import {
 
 export const RecyclersPage: React.FC = () => {
   const navigate = useNavigate();
-  const { recyclers, selectedRecycler, setSelectedRecycler, currentDevice, userAddress } = useApp();
+  const { recyclers, selectedRecycler, setSelectedRecycler, currentDevice, userAddress, addToast } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [maxDistance, setMaxDistance] = useState<number>(20);
@@ -59,6 +59,14 @@ export const RecyclersPage: React.FC = () => {
   };
 
   const handleSchedulePickup = (recycler: Recycler) => {
+    if (!recycler.verified) {
+      addToast({
+        type: 'warning',
+        title: 'Unverified Recycler',
+        description: 'Only verified recyclers can schedule pickups.',
+      });
+      return;
+    }
     setSelectedRecycler(recycler);
     navigate('/pickup');
   };
@@ -266,14 +274,31 @@ export const RecyclersPage: React.FC = () => {
             <div className="glass-panel p-4 rounded-xl border border-[#EBD3A0]/30 flex items-center justify-between gap-3 text-xs font-sans shadow-card">
               <div className="min-w-0">
                 <span className="text-[#8C9C94] block truncate text-[10px] uppercase tracking-wider">Target Facility</span>
-                <span className="text-[#F3EFE6] font-medium truncate block mt-0.5">{selectedRecycler.name}</span>
+                <span className="text-[#F3EFE6] font-medium truncate block mt-0.5 flex items-center gap-1.5">
+                  <span>{selectedRecycler.name}</span>
+                  {!selectedRecycler.verified && (
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#D9776B]/20 text-[#EAA198] border border-[#D9776B]/30 font-semibold">
+                      Unverified
+                    </span>
+                  )}
+                </span>
               </div>
-              <button
-                onClick={() => handleSchedulePickup(selectedRecycler)}
-                className="btn-gold px-4 py-2 text-xs font-sans font-semibold tracking-tight shrink-0"
-              >
-                Schedule Now
-              </button>
+              {selectedRecycler.verified ? (
+                <button
+                  onClick={() => handleSchedulePickup(selectedRecycler)}
+                  className="btn-gold px-4 py-2 text-xs font-sans font-semibold tracking-tight shrink-0"
+                >
+                  Schedule Now
+                </button>
+              ) : (
+                <button
+                  disabled
+                  title="Only verified recyclers can schedule pickups"
+                  className="px-4 py-2 text-xs font-sans font-semibold tracking-tight shrink-0 rounded-xl bg-white/[0.04] text-[#8C9C94] border border-white/[0.08] cursor-not-allowed opacity-60"
+                >
+                  Unverified
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -366,15 +391,25 @@ export const RecyclersPage: React.FC = () => {
                 <span className="font-mono">{auditModalRecycler.contactPhone}</span>
               </a>
 
-              <button
-                onClick={() => {
-                  handleSchedulePickup(auditModalRecycler);
-                  setAuditModalRecycler(null);
-                }}
-                className="btn-gold px-6 py-2.5 text-xs font-sans font-semibold tracking-tight"
-              >
-                Select & Schedule Pickup
-              </button>
+              {auditModalRecycler.verified ? (
+                <button
+                  onClick={() => {
+                    handleSchedulePickup(auditModalRecycler);
+                    setAuditModalRecycler(null);
+                  }}
+                  className="btn-gold px-6 py-2.5 text-xs font-sans font-semibold tracking-tight"
+                >
+                  Select & Schedule Pickup
+                </button>
+              ) : (
+                <button
+                  disabled
+                  title="Only verified recyclers can schedule pickups"
+                  className="px-6 py-2.5 text-xs font-sans font-semibold tracking-tight rounded-xl bg-white/[0.04] text-[#8C9C94] border border-white/[0.08] cursor-not-allowed opacity-60"
+                >
+                  Unverified (Cannot Schedule)
+                </button>
+              )}
             </div>
 
           </div>

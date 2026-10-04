@@ -10,6 +10,7 @@ interface LeafletMapProps {
   userCoordinates?: [number, number];
   routeStops?: PickupStop[];
   polylinePoints?: [number, number][];
+  isEstimated?: boolean;
   zoom?: number;
   center?: [number, number];
   height?: string;
@@ -22,6 +23,7 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
   userCoordinates,
   routeStops,
   polylinePoints,
+  isEstimated = false,
   zoom = 12,
   center = ERODE_CENTER,
   height = '500px'
@@ -259,9 +261,19 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
       });
     }
 
-    // Auto-fit bounds
-    if (bounds.length > 1 && (routeStops?.length || selectedRecyclerId)) {
-      safely(() => map.fitBounds(L.latLngBounds(bounds), { padding: [40, 40], maxZoom: 14 }));
+    // Include road geometry in bounds
+    if (polylinePoints && polylinePoints.length > 1) {
+      polylinePoints.forEach((pt) => bounds.push(pt));
+    }
+
+    // Auto-fit bounds guarding against unmounted map
+    if (bounds.length > 1 && (routeStops?.length || selectedRecyclerId || (polylinePoints && polylinePoints.length > 1))) {
+      safely(() => {
+        if (!mapInstanceRef.current) return;
+        const container = map.getContainer();
+        if (!container || !container.isConnected) return;
+        map.fitBounds(L.latLngBounds(bounds), { padding: [40, 40], maxZoom: 14 });
+      });
     }
   }, [recyclers, selectedRecyclerId, userCoordinates, routeStops, polylinePoints]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -274,9 +286,13 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
         <div className="absolute top-3 left-3 z-[400] pointer-events-none">
           <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-[#0E1814]/95 backdrop-blur-md border border-[#EBD3A0]/40 text-xs font-sans text-[#F3EFE6] shadow-gold-sm">
             <span className="w-1.5 h-1.5 rounded-full bg-[#EBD3A0]" />
-            <span className="font-semibold text-gold-gradient tracking-wide">★ Best Route</span>
+            <span className="font-semibold text-gold-gradient tracking-wide">
+              {isEstimated ? 'Estimated Route' : '★ Best Route'}
+            </span>
             <span className="text-white/20">•</span>
-            <span className="text-[#8C9C94] text-[11px]">Nearest-Neighbor Batch (-42% CO₂)</span>
+            <span className="text-[#8C9C94] text-[11px]">
+              {isEstimated ? 'Estimated route' : 'Road-optimized batch (-42% CO₂)'}
+            </span>
           </div>
         </div>
       )}

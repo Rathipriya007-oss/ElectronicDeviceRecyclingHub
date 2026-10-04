@@ -116,7 +116,7 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
       <div className="p-4 rounded-xl bg-gradient-to-br from-[#13211B] to-[#0E1814] border border-[#EBD3A0]/25 shadow-inner mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <span className="text-[11px] tracking-wide uppercase text-[#8C9C94] font-sans block">
-            Guaranteed Recovery Payout
+            Estimated Recovery Payout
           </span>
           <div className="text-2xl sm:text-3xl font-serif font-medium text-gold-gradient tracking-tight mt-0.5">
             ₹{device.estimatedValueMin.toLocaleString('en-IN')} – ₹{device.estimatedValueMax.toLocaleString('en-IN')}

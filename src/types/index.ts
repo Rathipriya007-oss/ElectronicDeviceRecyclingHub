@@ -84,6 +84,7 @@ export interface PickupOrder {
   status: PickupStatus;
   finalPayout: number;
   routeStops: PickupStop[];
+  routeGeometry?: [number, number][];
   totalDistanceKm: number;
   batchCarbonSavingKg: number;
   trackingNumber: string;

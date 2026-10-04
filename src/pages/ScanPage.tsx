@@ -218,7 +218,7 @@ export const ScanPage: React.FC = () => {
             Device Diagnostic & Valuation
           </h1>
           <p className="text-[#8C9C94] text-sm mt-1 max-w-xl font-sans">
-            Upload or photograph any smartphone, laptop, or circuit board. Our neural network assesses physical condition, calculates salvage yields, and guarantees verified refiner bids.
+            Upload or photograph any smartphone, laptop, or circuit board. Our neural network assesses physical condition, calculates salvage yields, and estimates verified refiner bids.
           </p>
         </div>
 
@@ -408,7 +408,7 @@ export const ScanPage: React.FC = () => {
                   onClick={() => startDiagnostic(true)}
                   className="px-3 py-1.5 rounded-lg bg-[#3FA17C]/20 hover:bg-[#3FA17C]/30 text-[#67C7A2] border border-[#3FA17C]/30 transition-colors"
                 >
-                  Use Guaranteed Offline Engine
+                  Use Estimated Offline Engine
                 </button>
               </div>
             </div>

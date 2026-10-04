@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { LeafletMap } from '../components/LeafletMap';
 import { buildOptimizedPickupRoute } from '../services/routeOptimizer';
+import { getOptimizedRoute, ExtendedRouteResult } from '../services/routingService';
 import { PickupStatus } from '../types';
 import {
   Calendar,
@@ -37,18 +38,34 @@ export const PickupPlannerPage: React.FC = () => {
     pickups,
     currentPickup,
     schedulePickup,
-    updatePickupStatus
+    updatePickupStatus,
+    addToast
   } = useApp();
 
-  // Selected device & recycler for scheduling
+  // Latest active pickup for tracking
+  const activeOrder = currentPickup || (pickups.length > 0 ? pickups[0] : null);
+
+  // Filter verified recyclers for scheduling dropdown
+  const verifiedRecyclers = useMemo(() => recyclers.filter((r) => r.verified), [recyclers]);
+
+  // Selected device & recycler for scheduling - initialize from activeOrder if present
   const [activeDeviceId, setActiveDeviceId] = useState(
-    currentDevice?.id || (devices.length > 0 ? devices[0].id : '')
+    activeOrder?.deviceId || activeOrder?.device?.id || currentDevice?.id || (devices.length > 0 ? devices[0].id : '')
   );
   const [activeRecyclerId, setActiveRecyclerId] = useState(
-    selectedRecycler?.id || (recyclers.length > 0 ? recyclers[0].id : '')
+    activeOrder?.recyclerId || activeOrder?.recycler?.id || selectedRecycler?.id || (verifiedRecyclers.length > 0 ? verifiedRecyclers[0].id : (recyclers[0]?.id ?? ''))
   );
 
-  // Keep state synchronized whenever context updates
+  // Keep state synchronized whenever context / activeOrder updates
+  useEffect(() => {
+    if (activeOrder?.recyclerId || activeOrder?.recycler?.id) {
+      const rId = activeOrder.recyclerId || activeOrder.recycler.id;
+      setActiveRecyclerId(rId);
+      const rec = recyclers.find((r) => r.id === rId);
+      if (rec) setSelectedRecycler(rec);
+    }
+  }, [activeOrder?.id, activeOrder?.recyclerId]);
+
   useEffect(() => {
     if (currentDevice?.id) {
       setActiveDeviceId(currentDevice.id);
@@ -96,28 +113,96 @@ export const PickupPlannerPage: React.FC = () => {
   const [selectedSlot, setSelectedSlot] = useState('10:00 AM - 01:00 PM');
   const [customAddress, setCustomAddress] = useState(userAddress.address);
 
-  // Latest active pickup for tracking
-  const activeOrder = currentPickup || (pickups.length > 0 ? pickups[0] : null);
-
-  // Build the 3-stop nearest-neighbor route
-  const routeData = useMemo(() => {
-    return buildOptimizedPickupRoute(
+  // Initialize routeData with saved route if activeOrder already exists, or fallback
+  const [routeData, setRouteData] = useState<ExtendedRouteResult>(() => {
+    if (
+      activeOrder &&
+      activeOrder.routeStops &&
+      activeOrder.routeStops.length > 0 &&
+      activeOrder.routeGeometry &&
+      activeOrder.routeGeometry.length > 1
+    ) {
+      return {
+        orderedStops: activeOrder.routeStops,
+        totalDistanceKm: activeOrder.totalDistanceKm || 0,
+        totalDurationMinutes:
+          activeOrder.routeStops[activeOrder.routeStops.length - 1]?.etaMinutes || 25,
+        co2BatchSavingsKg:
+          activeOrder.batchCarbonSavingKg ||
+          Number(((activeOrder.totalDistanceKm || 0) * 0.28 * 1.8).toFixed(1)),
+        polylinePoints: activeOrder.routeGeometry,
+        isEstimated: false,
+        source: 'cached',
+      };
+    }
+    const fallback = buildOptimizedPickupRoute(
       userAddress.coordinates,
       customAddress,
       activeRecycler
     );
+    return {
+      ...fallback,
+      isEstimated: true,
+      source: 'fallback-estimated',
+    };
+  });
+
+  const [isLoadingRoute, setIsLoadingRoute] = useState(false);
+
+  // Fetch real OSRM road route whenever user location, customAddress or activeRecycler changes
+  useEffect(() => {
+    let isCancelled = false;
+    setIsLoadingRoute(true);
+
+    getOptimizedRoute(userAddress.coordinates, customAddress, activeRecycler)
+      .then((res) => {
+        if (!isCancelled) {
+          setRouteData(res);
+          setIsLoadingRoute(false);
+        }
+      })
+      .catch((err) => {
+        console.warn('[PickupPlannerPage] routing fallback:', err);
+        if (!isCancelled) {
+          const fallback = buildOptimizedPickupRoute(
+            userAddress.coordinates,
+            customAddress,
+            activeRecycler
+          );
+          setRouteData({
+            ...fallback,
+            isEstimated: true,
+            source: 'fallback-estimated',
+          });
+          setIsLoadingRoute(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
   }, [userAddress.coordinates, customAddress, activeRecycler]);
 
   const handleConfirmSchedule = (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeDevice || !activeRecycler) return;
 
+    if (!activeRecycler.verified) {
+      addToast({
+        type: 'warning',
+        title: 'Unverified Recycler',
+        description: 'Only verified recyclers can schedule pickups. Please select a verified facility.',
+      });
+      return;
+    }
+
     schedulePickup({
       deviceId: activeDevice.id,
       recyclerId: activeRecycler.id,
       pickupDate: selectedDate,
       timeSlot: selectedSlot,
-      pickupAddress: customAddress
+      pickupAddress: customAddress,
+      routeData: routeData,
     });
   };
 
@@ -178,8 +263,14 @@ export const PickupPlannerPage: React.FC = () => {
               <h3 className="text-lg font-serif text-[#F3EFE6] mt-0.5">
                 Batch Route #{activeOrder.trackingNumber}
               </h3>
-              <p className="text-xs text-[#8C9C94] font-mono mt-0.5">
-                Assigned Recycler: <span className="text-[#F3EFE6]">{activeOrder.recycler.name}</span>
+              <p className="text-xs text-[#8C9C94] font-mono mt-0.5 flex items-center gap-1.5 flex-wrap">
+                <span>Assigned Recycler:</span>
+                <span className="text-[#F3EFE6] font-semibold">{activeRecycler?.name || activeOrder?.recycler?.name}</span>
+                {activeRecycler && !activeRecycler.verified && (
+                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#D9776B]/20 text-[#EAA198] border border-[#D9776B]/30 font-semibold font-sans">
+                    Unverified
+                  </span>
+                )}
               </p>
             </div>
 
@@ -317,11 +408,16 @@ export const PickupPlannerPage: React.FC = () => {
                   }}
                   className="w-full px-3.5 py-2.5 rounded-xl bg-[#07100D] border border-white/10 text-[#F3EFE6] focus:border-[#C49A55] focus:ring-1 focus:ring-[#C49A55] outline-none"
                 >
-                  {recyclers.map((r) => (
+                  {verifiedRecyclers.map((r) => (
                     <option key={r.id} value={r.id} className="bg-[#0E1814] text-[#F3EFE6]">
                       {r.name} ({r.locality} • {r.distanceKm} km • ★ {r.rating})
                     </option>
                   ))}
+                  {activeRecycler && !activeRecycler.verified && (
+                    <option key={activeRecycler.id} value={activeRecycler.id} disabled className="bg-[#0E1814] text-[#8C9C94]">
+                      {activeRecycler.name} (Unverified Facility)
+                    </option>
+                  )}
                 </select>
               </div>
 
@@ -428,9 +524,16 @@ export const PickupPlannerPage: React.FC = () => {
                 <span className="text-[#8C9C94]">Manifest ID:</span>
                 <span className="text-[#EBD3A0] font-bold">{activeOrder?.certificateId || 'CPCB-TN-DISP-09418'}</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center">
                 <span className="text-[#8C9C94]">Carrier Node:</span>
-                <span>{activeRecycler?.name}</span>
+                <span className="flex items-center gap-1.5">
+                  <span>{activeRecycler?.name}</span>
+                  {activeRecycler && !activeRecycler.verified && (
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#D9776B]/20 text-[#EAA198] border border-[#D9776B]/30 font-semibold font-sans">
+                      Unverified
+                    </span>
+                  )}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-[#8C9C94]">CO₂ Abatement Credit:</span>
@@ -460,18 +563,23 @@ export const PickupPlannerPage: React.FC = () => {
           {/* Map with Polyline and Stops */}
           <div className="space-y-3">
             <div className="flex items-center justify-between text-xs font-mono text-[#8C9C94] px-1">
-              <span className="flex items-center gap-1.5">
+              <span className="flex items-center gap-1.5 flex-wrap">
                 <Navigation className="w-3.5 h-3.5 text-[#EBD3A0]" />
-                <span>3-Stop Nearest-Neighbor Route Loop</span>
+                <span>{routeData.isEstimated ? 'Estimated route' : 'Road route (OpenStreetMap)'}</span>
               </span>
-              <span className="text-[#EBD3A0] font-bold">
-                {routeData.totalDistanceKm} km total • ~{routeData.totalDurationMinutes} mins
-              </span>
+              {isLoadingRoute ? (
+                <span className="w-32 h-4 rounded bg-white/10 animate-pulse inline-block" />
+              ) : (
+                <span className="text-[#EBD3A0] font-bold">
+                  {routeData.totalDistanceKm} km total • ~{routeData.totalDurationMinutes} mins
+                </span>
+              )}
             </div>
 
             <LeafletMap
               routeStops={routeData.orderedStops}
               polylinePoints={routeData.polylinePoints}
+              isEstimated={routeData.isEstimated}
               userCoordinates={userAddress.coordinates}
               height="440px"
             />
@@ -510,41 +618,55 @@ export const PickupPlannerPage: React.FC = () => {
               {/* Connecting line */}
               <div className="absolute top-4 bottom-4 left-4 w-[2px] bg-gradient-to-b from-[#EBD3A0]/60 via-[#C49A55]/40 to-[#3FA17C]/60 -z-0" />
 
-              {routeData.orderedStops.map((stop) => {
-                const isUser = stop.type === 'pickup_user';
-                const isDest = stop.type === 'central_hub';
-
-                return (
-                  <div key={stop.id} className="flex items-start gap-4 relative z-10">
-                    <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center font-mono font-extrabold text-xs shrink-0 shadow-gold-sm ${
-                        isUser
-                          ? 'bg-[#EBD3A0] text-[#1A1409]'
-                          : isDest
-                          ? 'bg-[#3FA17C] text-[#1A1409]'
-                          : 'bg-[#C49A55] text-[#1A1409]'
-                      }`}
-                    >
-                      {stop.stopNumber}
+              {isLoadingRoute ? (
+                [1, 2, 3].map((num) => (
+                  <div key={num} className="flex items-start gap-4 relative z-10 animate-pulse">
+                    <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center font-mono font-extrabold text-xs shrink-0 text-[#8C9C94]">
+                      {num}
                     </div>
-
-                    <div className="flex-1 p-3.5 rounded-xl bg-[#07100D] border border-white/[0.06]">
-                      <div className="flex items-center justify-between text-xs font-mono">
-                        <span className="font-bold text-[#F3EFE6]">{stop.name}</span>
-                        <span className={isUser ? 'text-[#3FA17C]' : 'text-[#EBD3A0]'}>
-                          {stop.etaMinutes === 0 ? 'Origin (Pickup)' : `ETA: +${stop.etaMinutes}m`}
-                        </span>
-                      </div>
-                      <p className="text-xs text-[#8C9C94] mt-0.5">{stop.address}</p>
-                      {stop.distanceFromPreviousKm > 0 && (
-                        <div className="mt-2 text-[10px] font-mono text-[#8C9C94]/80">
-                          Leg distance: {stop.distanceFromPreviousKm} km
-                        </div>
-                      )}
+                    <div className="flex-1 p-3.5 rounded-xl bg-[#07100D] border border-white/[0.06] space-y-2">
+                      <div className="h-4 bg-white/10 rounded w-1/3" />
+                      <div className="h-3 bg-white/5 rounded w-2/3" />
                     </div>
                   </div>
-                );
-              })}
+                ))
+              ) : (
+                routeData.orderedStops.map((stop) => {
+                  const isUser = stop.type === 'pickup_user';
+                  const isDest = stop.type === 'central_hub';
+
+                  return (
+                    <div key={stop.id} className="flex items-start gap-4 relative z-10">
+                      <div
+                        className={`w-8 h-8 rounded-full flex items-center justify-center font-mono font-extrabold text-xs shrink-0 shadow-gold-sm ${
+                          isUser
+                            ? 'bg-[#EBD3A0] text-[#1A1409]'
+                            : isDest
+                            ? 'bg-[#3FA17C] text-[#1A1409]'
+                            : 'bg-[#C49A55] text-[#1A1409]'
+                        }`}
+                      >
+                        {stop.stopNumber}
+                      </div>
+
+                      <div className="flex-1 p-3.5 rounded-xl bg-[#07100D] border border-white/[0.06]">
+                        <div className="flex items-center justify-between text-xs font-mono">
+                          <span className="font-bold text-[#F3EFE6]">{stop.name}</span>
+                          <span className={isUser ? 'text-[#3FA17C]' : 'text-[#EBD3A0]'}>
+                            {stop.etaMinutes === 0 ? 'Origin (Pickup)' : `ETA: +${stop.etaMinutes}m`}
+                          </span>
+                        </div>
+                        <p className="text-xs text-[#8C9C94] mt-0.5">{stop.address}</p>
+                        {stop.distanceFromPreviousKm > 0 && (
+                          <div className="mt-2 text-[10px] font-mono text-[#8C9C94]/80">
+                            Leg distance: {stop.distanceFromPreviousKm} km
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
 

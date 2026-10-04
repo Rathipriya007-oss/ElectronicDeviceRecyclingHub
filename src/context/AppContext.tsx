@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { DeviceAssessment, Recycler, PickupOrder, PickupStatus } from '../types';
+import { DeviceAssessment, Recycler, PickupOrder, PickupStatus, PickupStop } from '../types';
 import { RECYCLERS_SEED, DEFAULT_USER_ADDRESS, calculateDistanceKm } from '../services/recyclersData';
 import { buildOptimizedPickupRoute } from '../services/routeOptimizer';
 import { fetchNearbyRecyclers } from '../services/recyclerService';
@@ -43,6 +43,13 @@ interface AppContextType {
     pickupDate: string;
     timeSlot: string;
     pickupAddress: string;
+    routeData?: {
+      orderedStops: PickupStop[];
+      totalDistanceKm: number;
+      totalDurationMinutes: number;
+      co2BatchSavingsKg: number;
+      polylinePoints: [number, number][];
+    };
   }) => PickupOrder;
   updatePickupStatus: (pickupId: string, status: PickupStatus) => void;
 
@@ -187,6 +194,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: 'on_the_way',
       finalPayout: Math.round(demoDevice.estimatedValueMax * demoRecycler.baseOfferMultiplier),
       routeStops: routeInfo.orderedStops,
+      routeGeometry: routeInfo.polylinePoints,
       totalDistanceKm: routeInfo.totalDistanceKm,
       batchCarbonSavingKg: routeInfo.co2BatchSavingsKg,
       trackingNumber: 'RLP-ERD-2026-992',
@@ -388,11 +396,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     pickupDate: string;
     timeSlot: string;
     pickupAddress: string;
+    routeData?: {
+      orderedStops: PickupStop[];
+      totalDistanceKm: number;
+      totalDurationMinutes: number;
+      co2BatchSavingsKg: number;
+      polylinePoints: [number, number][];
+    };
   }): PickupOrder => {
     const device = devices.find((d) => d.id === options.deviceId) || currentDevice || devices[0];
     const recycler = recyclers.find((r) => r.id === options.recyclerId) || selectedRecycler || recyclers[0];
 
-    const routeInfo = buildOptimizedPickupRoute(
+    if (recycler && !recycler.verified) {
+      addToast({
+        type: 'warning',
+        title: 'Unverified Recycler',
+        description: 'Only verified recyclers can schedule pickups.',
+      });
+      return null as any;
+    }
+
+    const routeInfo = options.routeData || buildOptimizedPickupRoute(
       userAddress.coordinates,
       options.pickupAddress,
       recycler
@@ -414,6 +438,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: 'scheduled',
       finalPayout: calculatedPayout,
       routeStops: routeInfo.orderedStops,
+      routeGeometry: routeInfo.polylinePoints,
       totalDistanceKm: routeInfo.totalDistanceKm,
       batchCarbonSavingKg: routeInfo.co2BatchSavingsKg,
       trackingNumber: `RLP-ERD-${Math.floor(100000 + Math.random() * 900000)}`,

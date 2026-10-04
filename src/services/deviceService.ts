@@ -9,7 +9,7 @@
  */
 
 import { supabase } from './supabaseClient';
-import { DeviceAssessment, PickupOrder, PickupStatus, Recycler } from '../types';
+import { DeviceAssessment, PickupOrder, PickupStatus, PickupStop, Recycler } from '../types';
 import { RECYCLERS_SEED } from './recyclersData';
 
 // ── Storage: upload device photo ───────────────────────────────────────────────
@@ -170,7 +170,11 @@ export async function createPickup(
       pickup_address: pickup.pickupAddress,
       status: pickup.status,
       final_payout: pickup.finalPayout,
-      route_stops: pickup.routeStops,
+      route_stops: {
+        stops: pickup.routeStops,
+        geometry: pickup.routeGeometry || [],
+        total_distance_km: pickup.totalDistanceKm,
+      },
       total_distance_km: pickup.totalDistanceKm,
       batch_carbon_saving_kg: pickup.batchCarbonSavingKg,
       tracking_number: pickup.trackingNumber,
@@ -356,6 +360,25 @@ export async function fetchUserPickups(
         recyclers[0] ||
         RECYCLERS_SEED[0];
 
+      let stops: PickupStop[] = [];
+      let geometry: [number, number][] | undefined = undefined;
+
+      if (Array.isArray(row.route_stops)) {
+        stops = row.route_stops;
+        if ((row.route_stops as any).geometry) {
+          geometry = (row.route_stops as any).geometry;
+        } else if (stops[0] && (stops[0] as any).geometry) {
+          geometry = (stops[0] as any).geometry;
+        }
+      } else if (row.route_stops && typeof row.route_stops === 'object') {
+        stops = Array.isArray(row.route_stops.stops)
+          ? row.route_stops.stops
+          : Array.isArray(row.route_stops.orderedStops)
+          ? row.route_stops.orderedStops
+          : [];
+        geometry = row.route_stops.geometry || row.route_stops.polylinePoints || undefined;
+      }
+
       return {
         id: row.id,
         deviceId: row.device_id,
@@ -367,7 +390,8 @@ export async function fetchUserPickups(
         pickupAddress: row.pickup_address,
         status: row.status as PickupStatus,
         finalPayout: Number(row.final_payout) || 0,
-        routeStops: Array.isArray(row.route_stops) ? row.route_stops : [],
+        routeStops: stops,
+        routeGeometry: geometry,
         totalDistanceKm: Number(row.total_distance_km) || 0,
         batchCarbonSavingKg: Number(row.batch_carbon_saving_kg) || 0,
         trackingNumber: row.tracking_number || `RLP-ERD-${row.id.slice(0, 6).toUpperCase()}`,

@@ -166,7 +166,7 @@ export const LandingPage: React.FC = () => {
                   {/* Value readout bar */}
                   <div className="p-3.5 rounded-xl bg-[#13211B] border border-[#EBD3A0]/20 flex items-center justify-between">
                     <div>
-                      <span className="text-[10px] uppercase tracking-wider text-[#8C9C94] font-sans block">Guaranteed Offer Range</span>
+                      <span className="text-[10px] uppercase tracking-wider text-[#8C9C94] font-sans block">Estimated Offer Range</span>
                       <div className="text-xl font-serif text-gold-gradient font-medium">₹4,200 – ₹5,800</div>
                     </div>
                     <Link

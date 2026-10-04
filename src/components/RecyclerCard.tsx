@@ -48,9 +48,13 @@ export const RecyclerCard: React.FC<RecyclerCardProps> = ({
             alt={recycler.name}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           />
-          {recycler.verified && (
+          {recycler.verified ? (
             <div className="absolute bottom-0 right-0 p-1 bg-[#3FA17C] text-white rounded-tl-md" title="CPCB Verified Facility">
               <ShieldCheck className="w-3 h-3 text-white" />
+            </div>
+          ) : (
+            <div className="absolute bottom-0 right-0 p-1 bg-[#D9776B] text-white rounded-tl-md" title="Unverified Facility">
+              <ShieldCheck className="w-3 h-3 text-white opacity-60" />
             </div>
           )}
         </div>
@@ -61,6 +65,11 @@ export const RecyclerCard: React.FC<RecyclerCardProps> = ({
             <h3 className="font-serif text-base sm:text-lg font-medium text-[#F3EFE6] group-hover:text-[#EBD3A0] transition-colors truncate">
               {recycler.name}
             </h3>
+            {!recycler.verified && (
+              <span className="text-[10px] font-sans px-2 py-0.5 rounded-full bg-[#D9776B]/15 text-[#EAA198] border border-[#D9776B]/30 font-semibold">
+                Unverified
+              </span>
+            )}
             {recycler.r2Certified && (
               <span className="text-[10px] font-sans px-2 py-0.5 rounded-full bg-[#3FA17C]/10 text-[#67C7A2] border border-[#3FA17C]/25">
                 R2v3 Certified
@@ -124,17 +133,28 @@ export const RecyclerCard: React.FC<RecyclerCardProps> = ({
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onSchedulePickup(recycler);
-            }}
-            className="btn-gold flex items-center gap-1.5 px-4 py-2 text-xs font-sans font-semibold tracking-tight"
-          >
-            <span>Schedule Pickup</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
+          {recycler.verified ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSchedulePickup(recycler);
+              }}
+              className="btn-gold flex items-center gap-1.5 px-4 py-2 text-xs font-sans font-semibold tracking-tight"
+            >
+              <span>Schedule Pickup</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled
+              title="Only verified recyclers can schedule pickups"
+              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-sans font-semibold tracking-tight rounded-xl bg-white/[0.04] text-[#8C9C94] border border-white/[0.08] cursor-not-allowed opacity-60"
+            >
+              <span>Unverified</span>
+            </button>
+          )}
         </div>
       </div>
 
